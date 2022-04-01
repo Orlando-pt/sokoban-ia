@@ -1,7 +1,7 @@
 # iia-ia-sokoban
 Sokoban clone for AI teaching
 
-![Demo](https://github.com/dgomes/iia-ia-sokoban/raw/master/data/sokoban_screenshot.png)
+https://user-images.githubusercontent.com/60890452/161307167-5d4c3e15-c329-4e6c-a486-3c44d474e4fb.mp4
 
 ## How to install
 
@@ -22,7 +22,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## How to play
+## How to run
 
 open 3 terminals:
 
@@ -34,10 +34,6 @@ open 3 terminals:
 
 to play using the sample client make sure the client pygame hidden window has focus
 
-### Keys
-
-Directions: arrows
-
 ## Debug Installation
 
 Make sure pygame is properly installed:
@@ -46,8 +42,11 @@ python -m pygame.examples.aliens
 
 # Tested on:
 - OSX 10.15.6
+- Ubuntu 20.04
 
 # Credits
 
-Thank you [Kenney](https://www.kenney.nl/assets/sokoban) for the sprites! 
+Thank you [Kenney](https://www.kenney.nl/assets/sokoban) for the sprites.
+
+Also, a huge thanks to [Diogo Gomes](https://github.com/dgomes) for the amazing IA lessons.
 

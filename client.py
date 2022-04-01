@@ -2,101 +2,95 @@ import asyncio
 import getpass
 import json
 import os
+import time
+import sys
 
 import websockets
 from mapa import Map
-import pygame
-# Next 4 lines are not needed for AI agents, please remove them from your code!
+from aux_func import map_conditions, static_wall_deadlocks
+from strips import STRIPS
+from tree_search import SearchProblem, SearchTree
 
-class Client:
-    def __init__(self):
-        pygame.init()
-        program_icon = pygame.image.load("data/icon2.png")
-        pygame.display.set_icon(program_icon)
+async def solver(puzzle, solution):
+    i=0
+    while True:
+        start = time.time()
+
+        game_properties = await puzzle.get()
+        mapa = Map(game_properties["map"])
+
+        initial, goal, walls, available = map_conditions(mapa)
+
+        coord_box = [b.args for b in initial]
+        coord_goal = [g.args for g in goal]
+        wall_deadlocks = static_wall_deadlocks([c for c in available if not c in coord_box], coord_goal, walls)
         
-        loop = asyncio.get_event_loop()
-        SERVER = os.environ.get("SERVER", "localhost")
-        PORT = os.environ.get("PORT", "8000")
-        NAME = os.environ.get("NAME", getpass.getuser())
-        loop.run_until_complete(self.agent_loop(f"{SERVER}:{PORT}", NAME))
+        strips = STRIPS(available, walls, wall_deadlocks, coord_goal)
 
+        p = SearchProblem(strips, initial, goal)
         
-    
-    async def agent_loop(self,server_address="localhost:8000", agent_name="student"):
-        async with websockets.connect(f"ws://{server_address}/player") as websocket:
-
-            # Receive information about static game properties
-            await websocket.send(json.dumps({"cmd": "join", "name": agent_name}))
-
-            # Next 3 lines are not needed for AI agent
-            SCREEN = pygame.display.set_mode((299, 123))
-            SPRITES = pygame.image.load("data/pad.png").convert_alpha()
-            SCREEN.blit(SPRITES, (0, 0))
-            while True:
-                try:
-                    update = json.loads(
-                        await websocket.recv()
-                    )  # receive game update, this must be called timely or your game will get out of sync with the server
-                    state = None
-                    if "map" in update:
-                        # we got a new level
-                        game_properties = update
-                        mapa = Map(update["map"])
-                    else:
-                        # we got a current map state update
-                        #global state
-                        state = update
-                        print(state)
-
-                    # Next lines are only for the Human Agent, the key values are nonetheless the correct ones!
-                    
-                    
-                    self.pygame(pygame.event.get(),state)
-                    
-
-                except websockets.exceptions.ConnectionClosedOK:
-                    print("Server has cleanly disconnected us")
-                    return
-
-                # Next line is not needed for AI agent
-                pygame.display.flip()
-
-
-       
-       
-    def pygame(self, getPygameEvent, state):
-        key = ""
-        for event in getPygameEvent:
-            if event.type == pygame.QUIT:
-                pygame.quit()
-
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_UP:
-                    key = "w"
-                elif event.key == pygame.K_LEFT:
-                    key = "a"
-                elif event.key == pygame.K_DOWN:
-                    key = "s"
-                elif event.key == pygame.K_RIGHT:
-                    key = "d"
-
-                elif event.key == pygame.K_d:
-                    import pprint
-
-                    pprint.pprint(state)
-                    print(Map(f"levels/{state['level']}.xsb"))
-                    
-                send_web_socket(key)
-                break
+        t = SearchTree(p, mapa.keeper)
+        await t.search()
+        
+        keys = t.plan
                 
-        
-    async def send_web_socket(self,key):
-        await websocket.send(
-                    json.dumps({"cmd": "key", "key": key})
-                )  # send key command to server - you must implement this send in the AI agent
-             
-     
-            
-if __name__ == "__main__":
-    app = Client()
-    app.agent_loop()
+        await solution.put(keys)
+        i+=1
+        print("nv",i ,' took time:', time.time() - start, 'ms to be solved.')
+        print('Terminal Nodes:', t.terminals)
+        print('Non Terminal Nodes:', t.non_terminals)
+
+
+async def agent_loop(puzzle, solution, server_address="localhost:8000", agent_name="student"):
+    async with websockets.connect(f"ws://{server_address}/player") as websocket:
+
+        # Receive information about static game properties
+        await websocket.send(json.dumps({"cmd": "join", "name": agent_name}))
+       
+        while True:
+            try:
+                update = json.loads(
+                    await websocket.recv()
+                )  # receive game update, this must be called timely or your game will get out of sync with the server
+
+                if "map" in update:
+                    # we got a new level
+                    mapa = Map(update["map"])
+                    keys = ""
+                    await puzzle.put(update)
+                
+                if not solution.empty():
+                    keys = await solution.get()
+                
+                key = ""
+                if len(keys):
+                    key = keys[0]
+                    keys = keys[1:]
+	     
+
+                await websocket.send(
+                        json.dumps({"cmd": "key", "key": key})
+                ) 
+            except websockets.exceptions.ConnectionClosedOK:
+                print("Server has cleanly disconnected us")
+                sys.exit(0)
+                return
+
+# DO NOT CHANGE THE LINES BELLOW
+# You can change the default values using the command line, example:
+# $ NAME='arrumador' python3 client.py
+loop = asyncio.get_event_loop()
+SERVER = os.environ.get("SERVER", "localhost")
+PORT = os.environ.get("PORT", "8000")
+NAME = os.environ.get("NAME", getpass.getuser())
+
+puzzle = asyncio.Queue(loop=loop)
+solution = asyncio.Queue(loop=loop)
+
+net_task = loop.create_task(agent_loop(puzzle,solution, f"{SERVER}:{PORT}", NAME))
+solver_task = loop.create_task(solver(puzzle,solution))
+
+
+loop.run_until_complete(asyncio.gather(net_task, solver_task))
+loop.close()
+
